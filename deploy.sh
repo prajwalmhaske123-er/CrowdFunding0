@@ -26,7 +26,7 @@ echo "Deploying CrowdFunding contract..."
 # Run the forge deployment script
 # PRIVATE_KEY is read from the environment automatically by Foundry
 # (avoids exposing the key in process listings / shell history)
-forge script script/deploy.s.sol:DeployCrowdFunding \
+forge script deploy_script/deploy.s.sol:DeployCrowdFunding \
   --rpc-url "$RPC_URL" \
   --broadcast \
   -vvvv

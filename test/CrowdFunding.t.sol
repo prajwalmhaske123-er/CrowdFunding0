@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import "../src/CrowdFunding.sol";
+import "../contract/CrowdFunding.sol";
 
 /// @title CrowdFundingTest — Comprehensive test suite for the CrowdFunding contract.
 /// @notice Covers happy paths, revert/failure cases, edge cases, and security scenarios.
