@@ -1,0 +1,293 @@
+\section{Testing and Verification}
+\label{sec:testing}
+
+The contract is accompanied by a comprehensive Foundry test suite (\texttt{CrowdFunding.t.sol}) that covers happy paths, failure/revert paths, edge cases, and event emission verification. All tests are written using Foundry's \texttt{forge-std/Test.sol} framework and leverage cheatcodes such as \texttt{vm.prank}, \texttt{vm.warp}, \texttt{vm.deal}, and \texttt{vm.expectRevert}.
+
+\subsection{Test Environment Setup}
+
+\begin{lstlisting}[language=Solidity, caption={Test Setup}]
+function setUp() public {
+    crowdFunding = new CrowdFunding();
+    creator  = makeAddr("creator");
+    backer1  = makeAddr("backer1");
+    backer2  = makeAddr("backer2");
+    backer3  = makeAddr("backer3");
+    stranger = makeAddr("stranger");
+
+    vm.deal(creator,  100 ether);
+    vm.deal(backer1,  100 ether);
+    vm.deal(backer2,  100 ether);
+    vm.deal(backer3,  100 ether);
+    vm.deal(stranger, 100 ether);
+}
+\end{lstlisting}
+
+The setup deploys a fresh contract instance before every test, creates five labelled addresses using \texttt{makeAddr()}, and funds each with 100 ETH using \texttt{vm.deal()}. Constants used throughout: \texttt{GOAL = 10 ether}, \texttt{DURATION = 7 days}, \texttt{IPFS\_CID = keccak256("QmTestCID12345")}.
+
+\subsection{Campaign Creation Tests}
+
+\subsubsection{Test 1: \texttt{test\_CreateCampaign} --- Successful Creation}
+
+\textbf{Purpose:} Verifies that a campaign is correctly created with all fields initialised.
+
+\textbf{Procedure:}
+\begin{enumerate}[leftmargin=1.5em]
+    \item The \texttt{creator} address calls \texttt{createCampaign(10 ether, 7 days, IPFS\_CID)}.
+    \item The returned campaign ID is asserted to equal 1.
+    \item \texttt{campaignCount()} is asserted to equal 1.
+    \item \texttt{getCampaign(1)} is called and every field is validated: creator address, goal, deadline (\texttt{block.timestamp + 7 days}), raised amount (0), CID, and status (\texttt{Active}).
+\end{enumerate}
+
+\textbf{Significance:} Confirms the contract correctly initialises all struct fields and increments the campaign counter.
+
+\subsubsection{Test 2: \texttt{test\_CreateMultipleCampaigns} --- Sequential IDs}
+
+\textbf{Purpose:} Verifies that multiple campaigns receive sequential, unique IDs.
+
+\textbf{Procedure:} Two campaigns are created by different addresses. The first receives ID 1, the second receives ID 2, and \texttt{campaignCount()} returns 2.
+
+\textbf{Significance:} Ensures the auto-increment logic in the \texttt{unchecked} block works correctly for multiple campaigns.
+
+\subsubsection{Test 3: \texttt{test\_RevertWhen\_CreateCampaignWithZeroGoal} --- Zero Goal Rejection}
+
+\textbf{Purpose:} Ensures campaigns cannot be created with a zero funding goal.
+
+\textbf{Procedure:} \texttt{createCampaign(0, DURATION, IPFS\_CID)} is called. The test expects a revert with \texttt{GoalMustBeGreaterThanZero} error selector.
+
+\textbf{Significance:} Prevents creation of vacuous campaigns that would immediately transition to ``Successful'' with any contribution.
+
+\subsubsection{Test 4: \texttt{test\_RevertWhen\_CreateCampaignWithZeroDuration} --- Zero Duration Rejection}
+
+\textbf{Purpose:} Ensures campaigns cannot be created with a zero-second duration.
+
+\textbf{Procedure:} \texttt{createCampaign(GOAL, 0, IPFS\_CID)} is called. The test expects a revert with \texttt{DeadlineMustBeInFuture}.
+
+\textbf{Significance:} Prevents creation of campaigns that immediately expire, which would lock out all contributions.
+
+\subsection{Contribution Tests}
+
+\subsubsection{Test 5: \texttt{test\_Contribute} --- Single Contribution}
+
+\textbf{Purpose:} Verifies a single successful contribution.
+
+\textbf{Procedure:} \texttt{backer1} contributes 3 ETH to campaign 1. The test asserts that \texttt{raisedWei} equals 3 ETH and \texttt{getContribution(1, backer1)} returns 3 ETH.
+
+\textbf{Significance:} Confirms that both the campaign's aggregate total and the per-address contribution mapping are updated correctly.
+
+\subsubsection{Test 6: \texttt{test\_MultipleContributors} --- Multiple Backers}
+
+\textbf{Purpose:} Verifies that contributions from multiple backers accumulate correctly.
+
+\textbf{Procedure:} Three backers contribute 3, 4, and 2 ETH respectively. The total raised is asserted to be 9 ETH, and each individual's contribution is verified independently.
+
+\textbf{Significance:} Ensures the additive contribution logic works correctly across multiple addresses without interference.
+
+\subsubsection{Test 7: \texttt{test\_MultipleContributionsSameBacker} --- Repeat Contributions}
+
+\textbf{Purpose:} Verifies that a single backer can contribute multiple times, with amounts accumulating.
+
+\textbf{Procedure:} \texttt{backer1} contributes 2 ETH, then 3 ETH. The test asserts \texttt{getContribution()} returns 5 ETH.
+
+\textbf{Significance:} Confirms the \texttt{+=} operator correctly accumulates rather than overwrites contributions.
+
+\subsubsection{Test 8: \texttt{test\_RevertWhen\_ContributeZero} --- Zero-Value Rejection}
+
+\textbf{Purpose:} Ensures zero-ETH contributions are rejected.
+
+\textbf{Procedure:} \texttt{contribute\{value: 0\}(id)} is called. The test expects \texttt{ContributionMustBeGreaterThanZero}.
+
+\textbf{Significance:} Prevents gas-wasting no-op transactions and spurious event emissions.
+
+\subsubsection{Test 9: \texttt{test\_RevertWhen\_ContributeAfterDeadline} --- Post-Deadline Rejection}
+
+\textbf{Purpose:} Ensures no contributions are accepted after the campaign deadline.
+
+\textbf{Procedure:} A campaign is created, then \texttt{vm.warp(block.timestamp + DURATION + 1)} advances the block timestamp past the deadline. A contribution attempt reverts with \texttt{CampaignDeadlineReached}.
+
+\textbf{Significance:} Critical for ensuring the campaign's financial snapshot is frozen at the deadline, preventing last-second manipulation.
+
+\subsubsection{Test 10: \texttt{test\_RevertWhen\_ContributeToNonExistentCampaign} --- Invalid Campaign}
+
+\textbf{Purpose:} Ensures contributions to non-existent campaigns revert.
+
+\textbf{Procedure:} \texttt{contribute\{value: 1 ether\}(999)} is called with no campaigns created. Reverts with \texttt{CampaignDoesNotExist}.
+
+\textbf{Significance:} Prevents ETH from being locked in the contract with no associated campaign.
+
+\subsection{Successful Campaign --- Withdrawal Tests}
+
+\subsubsection{Test 11: \texttt{test\_SuccessfulCampaignWithdraw} --- Full Happy Path}
+
+\textbf{Purpose:} Verifies the complete successful campaign lifecycle: fund, exceed goal, pass deadline, withdraw.
+
+\textbf{Procedure:}
+\begin{enumerate}[leftmargin=1.5em]
+    \item Two backers contribute 6 ETH and 5 ETH (total: 11 ETH, exceeding the 10 ETH goal).
+    \item \texttt{vm.warp} advances past the deadline.
+    \item The creator's ETH balance is recorded before and after calling \texttt{withdrawFunds()}.
+    \item The balance difference is asserted to be exactly 11 ETH.
+    \item The campaign status is asserted to be \texttt{FundsWithdrawn}.
+\end{enumerate}
+
+\textbf{Significance:} End-to-end validation of the primary success path, including correct ETH transfer and status transition.
+
+\subsubsection{Test 12: \texttt{test\_RevertWhen\_RefundSuccessfulCampaign} --- No Refund on Success}
+
+\textbf{Purpose:} Ensures contributors cannot claim refunds from a successful campaign.
+
+\textbf{Procedure:} \texttt{backer1} fully funds a campaign (10 ETH). After the deadline, \texttt{backer1} attempts to call \texttt{refund()}. The call reverts with \texttt{InvalidCampaignStatus}.
+
+\textbf{Significance:} Prevents double-spending: if a campaign is successful, the creator is entitled to all funds. Contributors cannot simultaneously expect both the campaign outcome and a refund.
+
+\subsubsection{Test 13: \texttt{test\_RevertWhen\_WithdrawBeforeDeadline} --- Early Withdrawal Blocked}
+
+\textbf{Purpose:} Ensures creators cannot withdraw before the deadline, even if the goal is already met.
+
+\textbf{Procedure:} \texttt{backer1} contributes 15 ETH (exceeding the 10 ETH goal). The creator immediately attempts \texttt{withdrawFunds()} without advancing time. Reverts with \texttt{DeadlineNotReached}.
+
+\textbf{Significance:} The deadline enforcement ensures that late contributors have the opportunity to participate, and prevents creators from ``rug-pulling'' early by withdrawing as soon as the goal is met.
+
+\subsubsection{Test 14: \texttt{test\_RevertWhen\_NonCreatorWithdraws} --- Access Control}
+
+\textbf{Purpose:} Ensures only the campaign creator can withdraw funds.
+
+\textbf{Procedure:} A campaign is fully funded and past deadline. \texttt{stranger} (not the creator) attempts \texttt{withdrawFunds()}. Reverts with \texttt{OnlyCreatorCanCall}.
+
+\textbf{Significance:} Critical access control test. Without this, any address could steal the campaign's funds.
+
+\subsubsection{Test 15: \texttt{test\_RevertWhen\_WithdrawFailedCampaign} --- No Withdraw on Failure}
+
+\textbf{Purpose:} Ensures creators cannot withdraw from failed campaigns.
+
+\textbf{Procedure:} A campaign receives only 1 ETH (below the 10 ETH goal). After the deadline, the creator attempts \texttt{withdrawFunds()}. Reverts with \texttt{InvalidCampaignStatus} because \texttt{\_finaliseStatus()} marks it as \texttt{Failed}.
+
+\textbf{Significance:} Protects contributors' refund rights in failed campaigns.
+
+\subsubsection{Test 16: \texttt{test\_RevertWhen\_WithdrawTwice} --- Double-Withdraw Prevention}
+
+\textbf{Purpose:} Ensures a creator cannot withdraw the same funds twice.
+
+\textbf{Procedure:} After a successful withdrawal, the creator calls \texttt{withdrawFunds()} again. The second call reverts with \texttt{InvalidCampaignStatus} because the status is now \texttt{FundsWithdrawn}, not \texttt{Successful}.
+
+\textbf{Significance:} Prevents a catastrophic drain vulnerability. Without this check, a creator could repeatedly extract ETH from the contract.
+
+\subsection{Failed Campaign --- Refund Tests}
+
+\subsubsection{Test 17: \texttt{test\_RefundUnsuccessfulCampaign} --- Full Refund Path}
+
+\textbf{Purpose:} Verifies the complete failed campaign lifecycle with exact refund amounts.
+
+\textbf{Procedure:}
+\begin{enumerate}[leftmargin=1.5em]
+    \item \texttt{backer1} contributes 3 ETH, \texttt{backer2} contributes 2 ETH (total: 5 ETH, below the 10 ETH goal).
+    \item \texttt{vm.warp} advances past the deadline.
+    \item \texttt{backer1} calls \texttt{refund()} and receives exactly 3 ETH (verified via balance delta).
+    \item \texttt{backer2} calls \texttt{refund()} and receives exactly 2 ETH.
+    \item Both contributors' on-chain contribution records are verified to be zero.
+\end{enumerate}
+
+\textbf{Significance:} Confirms exact, lossless refunds. No ETH is retained by the contract, and each contributor receives precisely what they contributed.
+
+\subsubsection{Test 18: \texttt{test\_RevertWhen\_ZeroContributionRefund} --- Non-Contributor Rejected}
+
+\textbf{Purpose:} Ensures that addresses with zero contributions cannot claim refunds.
+
+\textbf{Procedure:} After a failed campaign, \texttt{stranger} (who never contributed) calls \texttt{refund()}. Reverts with \texttt{NoContributionToRefund}.
+
+\textbf{Significance:} Prevents extraction of ETH by addresses that never contributed.
+
+\subsubsection{Test 19: \texttt{test\_RevertWhen\_RefundBeforeDeadline} --- Early Refund Blocked}
+
+\textbf{Purpose:} Ensures contributors cannot claim refunds before the deadline.
+
+\textbf{Procedure:} \texttt{backer1} contributes 3 ETH and immediately calls \texttt{refund()} without advancing time. Reverts with \texttt{DeadlineNotReached}.
+
+\textbf{Significance:} Prevents contributors from extracting funds while the campaign is still active, which would undermine the creator's ability to reach the goal.
+
+\subsubsection{Test 20: \texttt{test\_RevertWhen\_RefundTwice} --- Double-Refund Prevention}
+
+\textbf{Purpose:} Ensures a contributor cannot refund the same contribution twice.
+
+\textbf{Procedure:} After a successful refund, \texttt{backer1} calls \texttt{refund()} again. The second call reverts with \texttt{NoContributionToRefund} because the contribution was zeroed out in the first refund.
+
+\textbf{Significance:} Prevents a drain attack where a contributor repeatedly extracts ETH. This is the primary defence-in-depth mechanism alongside \texttt{nonReentrant}.
+
+\subsection{Edge Case Tests}
+
+\subsubsection{Test 21: \texttt{test\_ExactGoalMet} --- Boundary Condition}
+
+\textbf{Purpose:} Verifies that contributing \emph{exactly} the goal amount results in a successful campaign.
+
+\textbf{Procedure:} \texttt{backer1} contributes exactly \texttt{GOAL} (10 ETH). After the deadline, the creator successfully withdraws. Status becomes \texttt{FundsWithdrawn}.
+
+\textbf{Significance:} Tests the boundary condition in \texttt{\_finaliseStatus()}: the check is \texttt{raisedWei >= goalWei}, so exact equality must result in \texttt{Successful}.
+
+\subsubsection{Test 22: \texttt{test\_RevertWhen\_WithdrawNoContributions} --- Zero-Funded Campaign}
+
+\textbf{Purpose:} Verifies that a campaign with zero contributions is marked as failed.
+
+\textbf{Procedure:} A campaign is created but receives no contributions. After the deadline, the creator attempts \texttt{withdrawFunds()}. Reverts with \texttt{InvalidCampaignStatus} because \texttt{0 < goalWei} triggers \texttt{Failed}.
+
+\textbf{Significance:} Ensures abandoned campaigns are correctly categorised and cannot be exploited.
+
+\subsubsection{Test 23: \texttt{test\_RevertWhen\_GetNonExistentCampaign} --- Invalid Read}
+
+\textbf{Purpose:} Verifies that querying a non-existent campaign reverts.
+
+\textbf{Procedure:} \texttt{getCampaign(999)} is called with no campaigns created. Reverts with \texttt{CampaignDoesNotExist}.
+
+\subsubsection{Test 24: \texttt{test\_RevertWhen\_GetContributionNonExistentCampaign} --- Invalid Contribution Query}
+
+\textbf{Purpose:} Verifies that querying contributions for a non-existent campaign reverts.
+
+\textbf{Procedure:} \texttt{getContribution(999, backer1)} is called. Reverts with \texttt{CampaignDoesNotExist}.
+
+\subsection{Event Emission Tests}
+
+\subsubsection{Test 25--28: Event Verification}
+
+Four tests verify that the correct events are emitted with the correct parameters:
+
+\begin{table}[H]
+\centering
+\caption{Event Emission Tests}
+\label{tab:events_tests}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Test} & \textbf{Event} & \textbf{Verified Parameters} \\
+\midrule
+\texttt{test\_EmitCampaignCreated}   & \texttt{CampaignCreated}    & campaignId=1, creator, goalWei, deadline \\
+\texttt{test\_EmitContributed}       & \texttt{Contributed}        & campaignId, backer1, 5 ether \\
+\texttt{test\_EmitFundsWithdrawn}    & \texttt{FundsWithdrawn}     & campaignId, creator, 10 ether \\
+\texttt{test\_EmitRefundIssued}      & \texttt{RefundIssued}       & campaignId, backer1, 3 ether \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Each test uses \texttt{vm.expectEmit(true, true, false, true, address(crowdFunding))} to verify both indexed and non-indexed parameters.
+
+\textbf{Significance:} Events are the primary mechanism for frontend reactivity and off-chain indexing (e.g., subgraphs). Incorrect event parameters would break the entire UI.
+
+\subsection{Test Coverage Summary}
+
+\begin{table}[H]
+\centering
+\caption{Test Coverage by Category}
+\label{tab:coverage}
+\begin{tabular}{l c c}
+\toprule
+\textbf{Category} & \textbf{Happy Path} & \textbf{Revert/Edge} \\
+\midrule
+Campaign Creation     & 2 & 2 \\
+Contributions         & 3 & 3 \\
+Withdrawal (Success)  & 1 & 4 \\
+Refund (Failure)      & 1 & 3 \\
+Edge Cases            & 1 & 3 \\
+Event Emission        & 4 & --- \\
+\midrule
+\textbf{Total}        & \textbf{12} & \textbf{15} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Total: \textbf{27 test functions} covering all public and external contract interfaces. Target line coverage: $\geq 70\%$.

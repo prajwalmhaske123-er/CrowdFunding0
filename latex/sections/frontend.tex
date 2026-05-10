@@ -1,0 +1,106 @@
+\section{Frontend Architecture}
+\label{sec:frontend}
+
+The CrowdFund frontend is a React-based single-page application built with Vite, providing users with an intuitive interface for wallet connection, campaign creation, contribution, withdrawal, and refund operations.
+
+\subsection{Technology Choices}
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{React + Vite:} Chosen for fast development iteration (hot module replacement) and optimised production builds.
+    \item \textbf{ethers.js v6:} The industry-standard library for Ethereum wallet and contract interaction, providing \texttt{BrowserProvider} for MetaMask integration and \texttt{Contract} for ABI-typed function calls.
+    \item \textbf{MetaMask:} The most widely adopted browser wallet, used for user authentication and transaction signing. The DApp detects MetaMask via \texttt{window.ethereum}.
+\end{itemize}
+
+\subsection{Component Architecture}
+
+The frontend is organised into modular, reusable components:
+
+\begin{table}[H]
+\centering
+\caption{Frontend Component Breakdown}
+\label{tab:components}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Component} & \textbf{Responsibility} \\
+\midrule
+\texttt{App.jsx}          & Root component; conditionally renders Landing or Dashboard based on wallet connection state \\
+\texttt{Landing}           & Full-screen landing page with MetaMask connection trigger \\
+\texttt{Navbar}            & Top navigation bar displaying wallet address, balance, and network \\
+\texttt{StatsGrid}         & Dashboard statistics cards (campaign count, etc.) \\
+\texttt{CreateCampaign}    & Form for creating new campaigns (goal, duration, metadata) \\
+\texttt{CampaignList}      & Grid of all campaigns fetched from the contract \\
+\texttt{CampaignCard}      & Individual campaign card with contribute/withdraw/refund actions \\
+\texttt{Toast}             & Notification system for transaction status feedback \\
+\texttt{MetaMaskLogo}      & SVG MetaMask branding component \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{State Management: Web3Context}
+
+The \texttt{Web3Context} (React Context API) provides global wallet state to all components:
+
+\begin{lstlisting}[language=JavaScript, caption={Web3 Context Provider (Simplified)}]
+export function Web3Provider({ children }) {
+  const [account, setAccount] = useState(null)
+  const [provider, setProvider] = useState(null)
+  const [signer, setSigner] = useState(null)
+  const [contract, setContract] = useState(null)
+
+  const connectWallet = useCallback(async () => {
+    const accounts = await window.ethereum.request({
+      method: 'eth_requestAccounts'
+    })
+    const prov = new BrowserProvider(window.ethereum)
+    const sign = await prov.getSigner()
+    const ctr  = new Contract(CONTRACT_ADDRESS, CONTRACT_ABI, sign)
+    // ... set state
+  }, [])
+
+  // Listen for account/chain changes
+  useEffect(() => {
+    window.ethereum.on('accountsChanged', handleAccounts)
+    window.ethereum.on('chainChanged', () => window.location.reload())
+  }, [])
+}
+\end{lstlisting}
+
+Key features:
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Auto-reconnect:} On page load, checks if MetaMask is already authorised and reconnects silently.
+    \item \textbf{Account change handling:} Listens for \texttt{accountsChanged} events and updates all state accordingly.
+    \item \textbf{Chain change handling:} Reloads the page on network switch to ensure contract state consistency.
+\end{itemize}
+
+\subsection{Contract Interaction Hook: \texttt{useContract}}
+
+The \texttt{useContract} custom hook encapsulates all smart contract read/write operations:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \texttt{loadAllCampaigns()}: Iterates from \texttt{campaignCount} down to 1, fetching each campaign's on-chain data and the current user's contribution. Returns campaigns in reverse chronological order.
+    \item \texttt{createCampaign(goalWei, durationSeconds, cidBytes32)}: Sends a write transaction and waits for confirmation.
+    \item \texttt{contribute(id, valueWei)}: Sends a payable transaction with the specified ETH value.
+    \item \texttt{withdrawFunds(id)} / \texttt{refund(id)}: Executes the respective contract function and refreshes the user's balance.
+\end{itemize}
+
+All write operations include \texttt{await tx.wait()} to ensure the transaction is mined before updating the UI, and \texttt{refreshBalance()} is called automatically after every transaction.
+
+\subsection{User Experience Flow}
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Landing Page:} User arrives at a full-screen landing page. A prominent ``Connect Wallet'' button triggers MetaMask.
+    \item \textbf{Dashboard:} Upon connection, the UI transitions to the dashboard showing campaign statistics, a creation form, and a list of all campaigns.
+    \item \textbf{Campaign Interaction:} Each campaign card displays goal progress, deadline countdown, and context-sensitive action buttons (Contribute, Withdraw, or Refund) based on the campaign status and the user's role (creator vs.\ contributor).
+    \item \textbf{Transaction Feedback:} Toast notifications provide real-time feedback on transaction submission, confirmation, and errors.
+\end{enumerate}
+
+\subsection{Design Aesthetic}
+
+The frontend employs a premium dark-mode design with the following characteristics:
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Colour palette:} Dark backgrounds with white and gold accent colours for a professional, premium feel.
+    \item \textbf{Glassmorphism:} Semi-transparent card backgrounds with backdrop blur effects.
+    \item \textbf{Gradient text:} Key headings use CSS gradient text effects for visual emphasis.
+    \item \textbf{Micro-animations:} Hover effects, button transitions, and loading states provide responsive visual feedback.
+    \item \textbf{Responsive layout:} CSS Grid and Flexbox ensure the layout adapts to all screen sizes.
+\end{itemize}

@@ -1,0 +1,218 @@
+\documentclass[12pt, a4paper]{article}
+
+% ──────────────────────────────────────────────
+%  Packages
+% ──────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{parskip}
+\usepackage{multicol}
+
+% ──────────────────────────────────────────────
+%  Colour Palette
+% ──────────────────────────────────────────────
+\definecolor{ethblue}{HTML}{3C3CFF}
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codeframe}{HTML}{CCCCCC}
+\definecolor{solgreen}{HTML}{2E7D32}
+\definecolor{solred}{HTML}{C62828}
+\definecolor{solorange}{HTML}{E65100}
+\definecolor{linkblue}{HTML}{1565C0}
+
+% ──────────────────────────────────────────────
+%  Hyperref Setup
+% ──────────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=linkblue,
+    citecolor=linkblue,
+    urlcolor=linkblue,
+    bookmarksnumbered=true,
+    pdfauthor={Prajwal},
+    pdftitle={CrowdFund: Decentralised Crowdfunding DApp},
+}
+
+% ──────────────────────────────────────────────
+%  Listings (Solidity Syntax)
+% ──────────────────────────────────────────────
+\lstdefinelanguage{Solidity}{
+    keywords={pragma, solidity, contract, function, returns, return, if, else, for, while, do, break, continue, throw, require, revert, emit, event, modifier, mapping, struct, enum, public, private, internal, external, view, pure, payable, memory, storage, calldata, is, new, delete, true, false, unchecked, error, indexed, abstract, override, virtual, using, import},
+    keywordstyle=\color{ethblue}\bfseries,
+    ndkeywords={uint256, uint8, address, bool, bytes32, string, bytes, int256},
+    ndkeywordstyle=\color{solorange}\bfseries,
+    sensitive=true,
+    comment=[l]{//},
+    morecomment=[s]{/*}{*/},
+    commentstyle=\color{solgreen}\itshape,
+    stringstyle=\color{solred},
+    morestring=[b]",
+    morestring=[b]',
+}
+
+\lstdefinelanguage{JavaScript}{
+    keywords={const, let, var, function, return, if, else, for, while, async, await, try, catch, finally, throw, new, import, export, from, default, class, extends, this, typeof, instanceof},
+    keywordstyle=\color{ethblue}\bfseries,
+    sensitive=true,
+    comment=[l]{//},
+    morecomment=[s]{/*}{*/},
+    commentstyle=\color{solgreen}\itshape,
+    stringstyle=\color{solred},
+    morestring=[b]",
+    morestring=[b]',
+
+}
+
+\lstset{
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    breakatwhitespace=false,
+    tabsize=4,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=8pt,
+    xleftmargin=1.5em,
+    framexleftmargin=1em,
+    captionpos=b,
+    aboveskip=1em,
+    belowskip=1em,
+}
+
+% ──────────────────────────────────────────────
+%  Headers and Footers
+% ──────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\leftmark}
+\fancyhead[R]{\small CrowdFund DApp}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.2pt}
+
+% ──────────────────────────────────────────────
+%  Section Formatting
+% ──────────────────────────────────────────────
+\titleformat{\section}{\Large\bfseries\color{ethblue}}{\thesection}{1em}{}[\vspace{-0.5em}\rule{\textwidth}{0.4pt}]
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+
+% ──────────────────────────────────────────────
+%  Document Begins
+% ──────────────────────────────────────────────
+\begin{document}
+
+% ── Title Page ──────────────────────────────
+\begin{titlepage}
+\centering
+
+\vspace*{3cm}
+
+{\color{ethblue}\rule{\textwidth}{2pt}}\\[1.5cm]
+
+{\fontsize{42}{50}\selectfont\bfseries\color{ethblue} CrowdFund}\\[0.8cm]
+
+{\LARGE\itshape A Decentralised Crowdfunding Platform on Ethereum}\\[1.5cm]
+
+{\color{ethblue}\rule{\textwidth}{2pt}}\\[2.5cm]
+
+{\Large\textbf{Project Report}}\\[0.4cm]
+{\large Blockchain \& Smart Contract Development}\\[0.3cm]
+{\large\today}
+
+\vfill
+
+\begin{minipage}{0.8\textwidth}
+\centering
+{\small\color{gray} Solidity \textasciicircum{}0.8.24 \;\textbullet\; Foundry (Forge, Anvil) \;\textbullet\; OpenZeppelin\\[0.2cm]
+React + Vite \;\textbullet\; ethers.js v6 \;\textbullet\; MetaMask \;\textbullet\; IPFS (Pinata)}
+\end{minipage}
+
+\vspace{1cm}
+
+\end{titlepage}
+
+% ── Authors Page ───────────────────────────
+\thispagestyle{empty}
+\vspace*{3cm}
+
+\begin{center}
+{\large\itshape This project was conceived, designed, and developed as part of\\[0.2cm]
+the Blockchain \& Smart Contract Development course.\\[0.3cm]
+It demonstrates the end-to-end engineering of a decentralised application---\\[0.2cm]
+from Solidity smart contract to production-ready web frontend.}
+\end{center}
+
+\vspace{2.5cm}
+
+\begin{center}
+{\Large\scshape Authors}\\[0.3cm]
+{\color{ethblue}\rule{0.3\textwidth}{0.5pt}}
+\end{center}
+
+\vspace{1.5cm}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.8}
+\begin{tabular}{c}
+{\Large\textbf{Member Name 1}} \quad {\normalsize\textit{Roll Number}}\\
+{\Large\textbf{Member Name 2}} \quad {\normalsize\textit{Roll Number}}\\
+{\Large\textbf{Member Name 3}} \quad {\normalsize\textit{Roll Number}}\\
+{\Large\textbf{Member Name 4}} \quad {\normalsize\textit{Roll Number}}\\
+{\Large\textbf{Member Name 5}} \quad {\normalsize\textit{Roll Number}}\\
+\end{tabular}
+\end{center}
+
+\vfill
+
+\begin{center}
+{\small\color{gray}\textit{All authors contributed equally to this project.}}
+\end{center}
+
+\newpage
+
+% ── Table of Contents ──────────────────────
+\tableofcontents
+\newpage
+
+% ── Sections ───────────────────────────────
+\input{sections/introduction}
+\newpage
+\input{sections/architecture}
+\newpage
+\input{sections/smartcontract}
+\newpage
+\input{sections/testing}
+\newpage
+\input{sections/gas}
+\newpage
+\input{sections/security}
+\newpage
+\input{sections/frontend}
+\newpage
+\input{sections/deployment}
+\newpage
+\input{sections/conclusion}
+
+% ── References ─────────────────────────────
+\newpage
+\input{sections/references}
+
+\end{document}

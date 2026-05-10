@@ -1,0 +1,279 @@
+\section{Smart Contract Design}
+\label{sec:smartcontract}
+
+The \texttt{CrowdFunding} contract is the core of the platform. It is a single, self-contained Solidity contract that inherits from OpenZeppelin's \texttt{ReentrancyGuard} and manages the full campaign lifecycle without any external dependencies beyond the inherited guard.
+
+\subsection{Contract Inheritance}
+
+\begin{lstlisting}[language=Solidity, caption={Contract Declaration}]
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+contract CrowdFunding is ReentrancyGuard {
+    // ...
+}
+\end{lstlisting}
+
+The contract inherits \texttt{ReentrancyGuard} to protect the \texttt{withdrawFunds()} and \texttt{refund()} functions from reentrancy attacks. This is a critical security measure discussed in detail in Section~\ref{sec:security}.
+
+\subsection{Custom Errors}
+
+Instead of using \texttt{require()} with string messages, the contract defines custom errors for gas-efficient reverts. Each custom error compiles to a 4-byte selector rather than storing and deploying an entire string, saving approximately 200 gas per revert.
+
+\begin{lstlisting}[language=Solidity, caption={Custom Error Definitions}]
+error GoalMustBeGreaterThanZero();
+error DeadlineMustBeInFuture();
+error ContributionMustBeGreaterThanZero();
+error CampaignDoesNotExist();
+error InvalidCampaignStatus();
+error CampaignDeadlineReached();
+error OnlyCreatorCanCall();
+error DeadlineNotReached();
+error NoContributionToRefund();
+error TransferFailed();
+\end{lstlisting}
+
+\subsection{Data Structures}
+
+\subsubsection{Campaign Status Enum}
+
+The campaign lifecycle is modelled as a finite state machine with four states:
+
+\begin{lstlisting}[language=Solidity, caption={Status Enum}]
+enum Status {
+    Active,          // Accepting contributions
+    Successful,      // Goal met after deadline
+    Failed,          // Goal NOT met after deadline
+    FundsWithdrawn   // Creator has withdrawn funds
+}
+\end{lstlisting}
+
+State transitions are strictly enforced:
+\begin{itemize}[leftmargin=1.5em]
+    \item \texttt{Active} $\rightarrow$ \texttt{Successful} (if \texttt{raisedWei $\geq$ goalWei} after deadline)
+    \item \texttt{Active} $\rightarrow$ \texttt{Failed} (if \texttt{raisedWei $<$ goalWei} after deadline)
+    \item \texttt{Successful} $\rightarrow$ \texttt{FundsWithdrawn} (after creator withdraws)
+\end{itemize}
+
+No backward transitions are permitted, ensuring the campaign lifecycle is irreversible.
+
+\subsubsection{Campaign Struct}
+
+\begin{lstlisting}[language=Solidity, caption={Campaign Struct}]
+struct Campaign {
+    address creator;
+    uint256 goalWei;
+    uint256 deadlineTimestamp;
+    uint256 raisedWei;
+    bytes32 ipfsCID;
+    Status  status;
+}
+\end{lstlisting}
+
+The struct occupies five 256-bit storage slots. The \texttt{ipfsCID} is stored as \texttt{bytes32} rather than \texttt{string} to avoid dynamic storage allocation, saving approximately 20,000 gas per campaign creation.
+
+\subsection{State Variables}
+
+\begin{lstlisting}[language=Solidity, caption={State Variables}]
+uint256 public campaignCount;
+mapping(uint256 => Campaign) public campaigns;
+mapping(uint256 => mapping(address => uint256)) public contributions;
+\end{lstlisting}
+
+The \texttt{campaignCount} serves as an auto-incrementing ID generator. The nested \texttt{contributions} mapping enables O(1) lookup of any contributor's amount for any campaign.
+
+\subsection{Modifiers}
+
+\begin{lstlisting}[language=Solidity, caption={Campaign Existence Modifier}]
+modifier campaignExists(uint256 _campaignId) {
+    if (_campaignId == 0 || _campaignId > campaignCount) {
+        revert CampaignDoesNotExist();
+    }
+    _;
+}
+\end{lstlisting}
+
+This modifier is applied to \texttt{contribute()}, \texttt{withdrawFunds()}, \texttt{refund()}, \texttt{getCampaign()}, and \texttt{getContribution()}, ensuring all operations target valid campaigns.
+
+\subsection{Core Functions}
+
+\subsubsection{createCampaign()}
+
+\begin{lstlisting}[language=Solidity, caption={Campaign Creation}]
+function createCampaign(
+    uint256 _goalWei,
+    uint256 _durationSeconds,
+    bytes32 _ipfsCID
+) external returns (uint256 campaignId) {
+    if (_goalWei == 0) revert GoalMustBeGreaterThanZero();
+    if (_durationSeconds == 0) revert DeadlineMustBeInFuture();
+
+    unchecked {
+        campaignId = ++campaignCount;
+    }
+
+    uint256 deadline = block.timestamp + _durationSeconds;
+
+    campaigns[campaignId] = Campaign({
+        creator: msg.sender,
+        goalWei: _goalWei,
+        deadlineTimestamp: deadline,
+        raisedWei: 0,
+        ipfsCID: _ipfsCID,
+        status: Status.Active
+    });
+
+    emit CampaignCreated(campaignId, msg.sender, _goalWei, deadline);
+}
+\end{lstlisting}
+
+\textbf{Design decisions:}
+\begin{itemize}[leftmargin=1.5em]
+    \item The \texttt{unchecked} block around the increment is safe because \texttt{campaignCount} is only ever incremented by 1, and overflow of a \texttt{uint256} is practically impossible (requires $2^{256}$ campaigns).
+    \item The deadline is computed as \texttt{block.timestamp + \_durationSeconds} rather than accepting an absolute timestamp, preventing user errors with past timestamps.
+    \item The function is \texttt{external} (not \texttt{public}) since it is never called internally, saving gas on the function selector dispatch.
+\end{itemize}
+
+\subsubsection{contribute()}
+
+\begin{lstlisting}[language=Solidity, caption={Contribution Logic}]
+function contribute(uint256 _campaignId)
+    external payable campaignExists(_campaignId)
+{
+    if (msg.value == 0) revert ContributionMustBeGreaterThanZero();
+
+    Campaign storage campaign = campaigns[_campaignId];
+
+    if (campaign.status != Status.Active) revert InvalidCampaignStatus();
+    if (block.timestamp >= campaign.deadlineTimestamp) {
+        revert CampaignDeadlineReached();
+    }
+
+    campaign.raisedWei += msg.value;
+    contributions[_campaignId][msg.sender] += msg.value;
+
+    emit Contributed(_campaignId, msg.sender, msg.value);
+}
+\end{lstlisting}
+
+\textbf{Key points:}
+\begin{itemize}[leftmargin=1.5em]
+    \item Uses a \texttt{storage} pointer (\texttt{Campaign storage campaign}) to avoid copying the entire struct to memory, reducing gas by avoiding redundant \texttt{SLOAD} operations.
+    \item Contributions are additive: a backer can contribute multiple times, and all amounts accumulate.
+    \item There is no upper cap on contributions. As discussed in Section~\ref{sec:security}, contributions exceeding the goal are not harmful---they simply increase the total raised, which benefits the creator.
+\end{itemize}
+
+\subsubsection{withdrawFunds()}
+
+\begin{lstlisting}[language=Solidity, caption={Fund Withdrawal (CEI Pattern)}]
+function withdrawFunds(uint256 _campaignId)
+    external nonReentrant campaignExists(_campaignId)
+{
+    Campaign storage campaign = campaigns[_campaignId];
+
+    if (msg.sender != campaign.creator) revert OnlyCreatorCanCall();
+    if (block.timestamp < campaign.deadlineTimestamp) {
+        revert DeadlineNotReached();
+    }
+
+    _finaliseStatus(_campaignId);
+
+    if (campaign.status != Status.Successful) {
+        revert InvalidCampaignStatus();
+    }
+
+    // Checks-Effects-Interactions
+    uint256 amount = campaign.raisedWei;       // Cache
+    campaign.status = Status.FundsWithdrawn;   // Effect
+
+    (bool success,) = payable(campaign.creator).call{value: amount}("");
+    if (!success) revert TransferFailed();     // Interaction
+
+    emit FundsWithdrawnEvent(_campaignId, campaign.creator, amount);
+}
+\end{lstlisting}
+
+This function demonstrates the \textbf{Checks-Effects-Interactions (CEI)} pattern:
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Checks:} Validates caller identity, deadline passage, and campaign status.
+    \item \textbf{Effects:} Updates the campaign status to \texttt{FundsWithdrawn} \emph{before} transferring ETH.
+    \item \textbf{Interactions:} Performs the external \texttt{call} to transfer ETH \emph{last}.
+\end{enumerate}
+
+\subsubsection{refund()}
+
+\begin{lstlisting}[language=Solidity, caption={Refund Logic (CEI Pattern)}]
+function refund(uint256 _campaignId)
+    external nonReentrant campaignExists(_campaignId)
+{
+    Campaign storage campaign = campaigns[_campaignId];
+
+    if (block.timestamp < campaign.deadlineTimestamp) {
+        revert DeadlineNotReached();
+    }
+
+    _finaliseStatus(_campaignId);
+
+    if (campaign.status != Status.Failed) {
+        revert InvalidCampaignStatus();
+    }
+
+    uint256 contributedAmount = contributions[_campaignId][msg.sender];
+    if (contributedAmount == 0) revert NoContributionToRefund();
+
+    // Effects: zero out BEFORE transfer
+    contributions[_campaignId][msg.sender] = 0;
+    campaign.raisedWei -= contributedAmount;
+
+    // Interaction
+    (bool success,) = payable(msg.sender).call{value: contributedAmount}("");
+    if (!success) revert TransferFailed();
+
+    emit RefundIssued(_campaignId, msg.sender, contributedAmount);
+}
+\end{lstlisting}
+
+The refund function zeroes out the contributor's balance \emph{before} sending ETH, preventing reentrancy even without the \texttt{nonReentrant} modifier (defence in depth).
+
+\subsubsection{\_finaliseStatus() --- Internal Helper}
+
+\begin{lstlisting}[language=Solidity, caption={Lazy Status Finalisation}]
+function _finaliseStatus(uint256 _campaignId) internal {
+    Campaign storage campaign = campaigns[_campaignId];
+
+    if (campaign.status != Status.Active) return;
+    if (block.timestamp < campaign.deadlineTimestamp) return;
+
+    if (campaign.raisedWei >= campaign.goalWei) {
+        campaign.status = Status.Successful;
+    } else {
+        campaign.status = Status.Failed;
+    }
+}
+\end{lstlisting}
+
+This implements \textbf{lazy evaluation}: the campaign status is not updated at deadline time (which would require an off-chain keeper or Chainlink Automation). Instead, the status is finalised on the first interaction after the deadline, saving gas by avoiding unnecessary state updates for campaigns that may never be interacted with again.
+
+\subsection{Events}
+
+The contract emits four events for off-chain indexing and frontend reactivity:
+
+\begin{table}[H]
+\centering
+\caption{Contract Events}
+\label{tab:events}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Event} & \textbf{Emitted When} \\
+\midrule
+\texttt{CampaignCreated}      & A new campaign is created \\
+\texttt{Contributed}           & A contribution is made to a campaign \\
+\texttt{FundsWithdrawnEvent}   & The creator withdraws funds from a successful campaign \\
+\texttt{RefundIssued}          & A contributor receives a refund from a failed campaign \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+All events use \texttt{indexed} parameters on \texttt{campaignId} and actor addresses, enabling efficient off-chain log filtering without storing additional on-chain data.

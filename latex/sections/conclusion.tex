@@ -1,0 +1,42 @@
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+\subsection{Summary of Achievements}
+
+This project successfully demonstrates the design, implementation, testing, and deployment of a fully decentralised crowdfunding platform on Ethereum. The key accomplishments are:
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Robust smart contract:} A single, self-contained Solidity contract manages the full campaign lifecycle (creation, contribution, withdrawal, refund) with strict state machine enforcement and comprehensive input validation.
+    
+    \item \textbf{Defence-in-depth security:} The contract employs multiple overlapping security measures---OpenZeppelin's \texttt{ReentrancyGuard}, the Checks-Effects-Interactions pattern, custom errors, and strict access control---ensuring resilience against reentrancy, unauthorised access, and double-spend attacks.
+    
+    \item \textbf{Comprehensive test suite:} 27 Foundry tests cover happy paths, failure paths, edge cases, and event emission, targeting $\geq 70\%$ line coverage. Every public function is tested for both correct behaviour and correct revert conditions.
+    
+    \item \textbf{Significant gas optimisation:} Through custom errors, \texttt{bytes32} CID storage, unchecked arithmetic, and storage pointer caching, the most expensive function (\texttt{createCampaign}) achieves a 17\% gas reduction ($\sim$20,320 gas saved per call).
+    
+    \item \textbf{Modern frontend:} A React-based SPA with MetaMask integration provides a premium user experience with real-time transaction feedback, responsive design, and dark-mode glassmorphism aesthetics.
+    
+    \item \textbf{Hybrid data architecture:} The strategic separation of on-chain (financial) and off-chain (descriptive) data optimises for both cost and usability, with IPFS providing decentralised metadata persistence and a local server fallback for development.
+    
+    \item \textbf{Production-ready deployment:} The platform deploys to Vercel with serverless API functions, Blob Storage for metadata, and secure environment variable management.
+\end{enumerate}
+
+\subsection{Limitations}
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{No on-chain campaign discovery:} The contract does not support querying campaigns by creator, status, or keyword. Off-chain indexing (e.g., The Graph) would be needed for rich queries.
+    \item \textbf{No partial withdrawals:} The creator must withdraw the full amount in a single transaction. Milestone-based partial withdrawals would add complexity but improve accountability.
+    \item \textbf{Single-chain deployment:} The platform is currently limited to a single EVM chain. Cross-chain support would expand accessibility.
+    \item \textbf{No contribution cap:} While intentional (see Section~\ref{subsec:overlimit}), some use cases may benefit from enforcing a maximum fundraise amount.
+\end{itemize}
+
+\subsection{Future Work}
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Governance and milestone-based release:} Implement a voting mechanism where backers can approve milestone completions before releasing funds in tranches.
+    \item \textbf{ERC-20 token support:} Extend the contract to accept stablecoins (USDC, DAI) in addition to native ETH.
+    \item \textbf{Subgraph integration:} Deploy a subgraph on The Graph to enable efficient campaign search, filtering, and analytics.
+    \item \textbf{Chainlink Automation:} Use Chainlink Keepers to automatically finalise campaign statuses at the deadline, rather than relying on lazy evaluation.
+    \item \textbf{Multi-chain deployment:} Deploy on L2 networks (Arbitrum, Optimism, Base) for lower gas costs and faster confirmations.
+    \item \textbf{Formal verification:} Apply formal verification tools (e.g., Certora, Halmos) to mathematically prove the absence of critical vulnerabilities.
+\end{enumerate}

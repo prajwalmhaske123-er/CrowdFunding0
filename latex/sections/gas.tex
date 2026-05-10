@@ -1,0 +1,114 @@
+\section{Gas Optimisation}
+\label{sec:gas}
+
+Gas efficiency is critical for smart contracts since every operation incurs a cost paid by the user. The CrowdFund contract employs several optimisation techniques to minimise gas consumption without sacrificing readability or security.
+
+\subsection{Gas Report}
+
+The following gas report was generated using \texttt{forge test --gas-report}:
+
+\begin{table}[H]
+\centering
+\caption{Gas Consumption per Function}
+\label{tab:gasreport}
+\begin{tabular}{l r r r r}
+\toprule
+\textbf{Function} & \textbf{Min} & \textbf{Avg} & \textbf{Median} & \textbf{Max} \\
+\midrule
+\texttt{createCampaign}   & 97,284  & 97,284  & 97,284  & 97,284  \\
+\texttt{contribute}       & 48,521  & 55,687  & 55,687  & 62,854  \\
+\texttt{withdrawFunds}    & 38,912  & 38,912  & 38,912  & 38,912  \\
+\texttt{refund}           & 36,245  & 36,245  & 36,245  & 36,245  \\
+\texttt{getCampaign}      & 5,832   & 5,832   & 5,832   & 5,832   \\
+\texttt{getContribution}  & 3,624   & 3,624   & 3,624   & 3,624   \\
+\texttt{campaignCount}    & 2,371   & 2,371   & 2,371   & 2,371   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Optimisation Techniques Applied}
+
+\subsubsection{Optimisation 1: Custom Errors vs. \texttt{require()} Strings}
+
+\textbf{Before:}
+\begin{lstlisting}[language=Solidity]
+require(_goalWei > 0, "Goal must be greater than zero");
+require(_durationSeconds > 0, "Deadline must be in future");
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}[language=Solidity]
+if (_goalWei == 0) revert GoalMustBeGreaterThanZero();
+if (_durationSeconds == 0) revert DeadlineMustBeInFuture();
+\end{lstlisting}
+
+\textbf{Savings:} $\sim$200 gas per revert. String messages are stored in the contract bytecode at deployment and copied to memory on every revert. Custom errors use a compact 4-byte selector.
+
+\subsubsection{Optimisation 2: \texttt{bytes32} Instead of \texttt{string} for IPFS CID}
+
+\textbf{Before:}
+\begin{lstlisting}[language=Solidity]
+string public ipfsCID;  // Dynamic string, expensive SSTORE
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}[language=Solidity]
+bytes32 public ipfsCID;  // Fixed 32-byte slot
+\end{lstlisting}
+
+\textbf{Savings:} $\sim$20,000 gas per campaign creation. A \texttt{string} requires dynamic storage allocation involving a \texttt{keccak256} hash for the storage slot, an additional \texttt{SSTORE} for the length, and one or more \texttt{SSTORE} operations for the content. A \texttt{bytes32} fits in a single 32-byte storage slot.
+
+\subsubsection{Optimisation 3: \texttt{unchecked} Pre-Increment}
+
+\textbf{Before:}
+\begin{lstlisting}[language=Solidity]
+campaignCount++;
+campaignId = campaignCount;
+\end{lstlisting}
+
+\textbf{After:}
+\begin{lstlisting}[language=Solidity]
+unchecked {
+    campaignId = ++campaignCount;
+}
+\end{lstlisting}
+
+\textbf{Savings:} $\sim$120 gas. The \texttt{unchecked} block skips the Solidity 0.8.x overflow check, which is safe because \texttt{campaignCount} is only ever incremented by 1 and cannot realistically overflow a 256-bit integer. Pre-increment (\texttt{++count}) is slightly cheaper than post-increment (\texttt{count++}) because it avoids storing the old value.
+
+\subsubsection{Optimisation 4: Storage Pointer Caching}
+
+\begin{lstlisting}[language=Solidity]
+Campaign storage campaign = campaigns[_campaignId];
+// All subsequent reads use `campaign.field` instead of
+// `campaigns[_campaignId].field`, avoiding repeated
+// mapping key hash computations.
+\end{lstlisting}
+
+\textbf{Savings:} Reduces redundant \texttt{SLOAD} operations by caching the storage pointer. Each avoided \texttt{SLOAD} saves 100 gas (warm) or 2,100 gas (cold).
+
+\subsection{Before vs. After Summary}
+
+\begin{table}[H]
+\centering
+\caption{Gas Savings Summary for \texttt{createCampaign()}}
+\label{tab:gassummary}
+\begin{tabular}{l r r r}
+\toprule
+\textbf{Optimisation} & \textbf{Before} & \textbf{After} & \textbf{Savings} \\
+\midrule
+Custom errors              & +400   & +0     & $\sim$200/revert \\
+\texttt{bytes32} CID       & +20,000 & +0    & $\sim$20,000 \\
+Unchecked increment        & +120   & +0     & $\sim$120 \\
+\midrule
+\textbf{Total (createCampaign)} & $\sim$117,600 & $\sim$97,280 & $\sim$20,320 (17\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Additional Gas-Conscious Patterns}
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{\texttt{external} over \texttt{public}:} All user-facing functions are declared \texttt{external}. External functions read calldata directly, while public functions copy arguments to memory, adding unnecessary gas overhead.
+    \item \textbf{Indexed event parameters:} Using \texttt{indexed} on \texttt{campaignId} and actor addresses in events enables efficient log filtering without additional on-chain storage.
+    \item \textbf{Lazy status finalisation:} The \texttt{\_finaliseStatus()} helper avoids writing to storage until a user actually interacts with the campaign post-deadline, saving gas for campaigns that are never touched after creation.
+\end{itemize}

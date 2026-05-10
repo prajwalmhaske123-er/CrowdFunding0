@@ -1,0 +1,42 @@
+\section{Introduction}
+\label{sec:introduction}
+
+\subsection{Problem Statement}
+
+Traditional crowdfunding platforms such as Kickstarter, Indiegogo, and GoFundMe operate as centralised intermediaries. While they have democratised fundraising, they suffer from several fundamental limitations:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Opaque fund management:} Contributors have no visibility into how collected funds are held or disbursed. The platform acts as an opaque custodian, and creators may misappropriate funds with limited accountability.
+    \item \textbf{High platform fees:} Centralised platforms typically charge 5--12\% of total funds raised, reducing the amount available to creators.
+    \item \textbf{Geographic restrictions:} Many platforms restrict participation based on nationality, banking infrastructure, or regulatory jurisdiction, excluding a large portion of the global population.
+    \item \textbf{Censorship risk:} A centralised entity can unilaterally remove campaigns, freeze funds, or deny service based on internal policies, political pressure, or subjective content moderation decisions.
+    \item \textbf{Single point of failure:} Platform downtime, data breaches, or corporate insolvency can result in total loss of campaign data and contributor funds.
+\end{itemize}
+
+These issues stem from a common root cause: \emph{trust is placed in a single, centralised entity}. Contributors must trust the platform to hold funds securely, enforce refund policies honestly, and disburse payments to creators without bias.
+
+\subsection{Objective}
+
+This project presents \textbf{CrowdFund}, a fully decentralised crowdfunding platform built on Ethereum. The system replaces the centralised intermediary with a transparent, immutable smart contract that enforces the following rules algorithmically:
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Campaign creation:} Any Ethereum address can create a campaign by specifying a funding goal (in Wei), a duration (in seconds), and an IPFS content identifier pointing to off-chain metadata (title, description, images).
+    \item \textbf{Contributions:} Any address can contribute ETH to an active campaign before its deadline. Contributions are tracked per-address and are fully transparent on-chain.
+    \item \textbf{Success path:} If the funding goal is met by the deadline, the campaign creator---and \emph{only} the creator---can withdraw the full amount raised.
+    \item \textbf{Failure path:} If the goal is not met by the deadline, each contributor can independently claim a full refund of their exact contribution.
+    \item \textbf{No intermediary:} At no point does any third party hold, manage, or have access to the funds. The smart contract is the sole custodian.
+\end{enumerate}
+
+\subsection{Scope of the Report}
+
+This report provides a comprehensive technical analysis of the CrowdFund DApp, covering:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item System architecture and on-chain/off-chain data separation strategy
+    \item Smart contract design, including state management, access control, and event emission
+    \item A detailed walkthrough of every test case in the Foundry test suite (26 tests)
+    \item Gas optimisation techniques with before-and-after cost analysis
+    \item Security analysis: attacks mitigated, attacks considered but deemed non-applicable, and design rationale for contribution overlimit handling
+    \item Frontend architecture using React, ethers.js v6, and MetaMask integration
+    \item Deployment pipeline for both local (Anvil) and production (Vercel) environments
+\end{itemize}

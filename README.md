@@ -1,4 +1,4 @@
-# CrowdFund — Decentralised Crowdfunding DApp
+# CrowdFund — Decentralised Crowdfunding DApp (Project 8)
 
 A decentralised crowdfunding platform built on Ethereum using Solidity smart contracts (Foundry) with a modern web frontend. Creators launch campaigns with funding goals and deadlines; backers contribute ETH; successful campaigns allow creator withdrawal, while failed campaigns enable contributor refunds — all on-chain, trustless, and transparent.
 
@@ -8,16 +8,18 @@ A decentralised crowdfunding platform built on Ethereum using Solidity smart con
 
 | Name    | Roll Number |
 | ------- | ----------- |
-| Prajwal | _ROLL_NUM_  |
-
-> **Note:** Replace the placeholder roll number above with actual values.
+| Mhaske Prajwal Sanjay | 240004033 |
+|Bhumika Kumari | 240051006|
+|Shruti Turare | 240008029|
+|Malothu Haritha | 240001042|
+|Kumkum Kushwaha | 240004028|
+|Apoorva Dinesh Chipte | 240021003|
 
 ---
 
 ## Architecture — On-Chain vs Off-Chain Data
 
 ### Stored On-Chain (required for contract logic)
-
 | Data                  | Type                                        |
 | --------------------- | ------------------------------------------- |
 | Campaign ID           | `uint256` (auto-increment)                  |
@@ -30,7 +32,6 @@ A decentralised crowdfunding platform built on Ethereum using Solidity smart con
 | IPFS CID              | `bytes32` (hash pointer to off-chain data)  |
 
 ### Kept Off-Chain (IPFS / server / encrypted store)
-
 - Campaign title, full description, images, pitch video → store on IPFS, put CID on-chain
 - Backer reward tiers and fulfilment details
 - Creator identity and verification documents (KYC)
@@ -41,34 +42,33 @@ A decentralised crowdfunding platform built on Ethereum using Solidity smart con
 ---
 
 ## Tech Stack
-
 - **Smart Contracts:** Solidity ^0.8.24
 - **Framework:** Foundry (Forge, Cast, Anvil)
 - **Security:** OpenZeppelin ReentrancyGuard
 - **Frontend:** HTML, CSS, JavaScript (ethers.js v6)
 - **Local Node:** Anvil (Foundry)
-
 ---
 
 ## Project Structure
-
 ```
 Crowd-Funding/
-├── src/
+├── contract/
 │   └── CrowdFunding.sol          # Main smart contract
 ├── test/
 │   └── CrowdFunding.t.sol        # Comprehensive test suite
-├── script/
+├── deploy_script/
 │   └── deploy.s.sol              # Foundry deployment script
 ├── frontend/
 │   ├── index.html                # DApp frontend
 │   ├── styles.css                # Premium dark-mode stylesheet
 │   └── app.js                    # Frontend application logic (ABI + MetaMask)
+├── reports/
+│   ├── gas-report.md             # gas optimization report
+│   └── coverage-report.txt       # coverage report
 ├── lib/
 │   ├── forge-std/                # Foundry standard library
 │   └── openzeppelin-contracts/   # OpenZeppelin contracts
 ├── foundry.toml                  # Foundry configuration
-├── gas-report.md                 # Gas optimisation report
 └── README.md                     # This file
 ```
 
@@ -77,13 +77,11 @@ Crowd-Funding/
 ## Setup & Installation
 
 ### Prerequisites
-
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) installed
 - [MetaMask](https://metamask.io/) browser extension
 - Git
 
 ### 1. Clone & Install Dependencies
-
 ```bash
 git clone <repository-url>
 cd Crowd-Funding
@@ -93,13 +91,11 @@ forge install OpenZeppelin/openzeppelin-contracts --no-commit
 ```
 
 ### 2. Compile
-
 ```bash
 forge build
 ```
 
 ### 3. Run Tests
-
 ```bash
 # Run all tests with verbose output
 forge test -vvv
@@ -112,13 +108,12 @@ forge coverage
 ```
 
 ### 4. Deploy Locally (Anvil)
-
 ```bash
 # Terminal 1: Start local Ethereum node
 anvil
 
 # Terminal 2: Deploy contract
-forge script script/deploy.s.sol:DeployCrowdFunding \
+forge script deploy_script/deploy.s.sol:DeployCrowdFunding \
     --rpc-url http://127.0.0.1:8545 \
     --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
     --broadcast
@@ -127,7 +122,6 @@ forge script script/deploy.s.sol:DeployCrowdFunding \
 > The private key above is the default Anvil account #0 (test only — never use in production).
 
 ### 5. Run the Frontend
-
 ```bash
 # Option A: Use Python's built-in HTTP server
 cd frontend
@@ -138,7 +132,6 @@ python3 -m http.server 8080
 ```
 
 ### 6. Connect MetaMask to Anvil
-
 1. Open MetaMask → Settings → Networks → Add Network
 2. Network Name: `Anvil Local`
 3. RPC URL: `http://127.0.0.1:8545`
@@ -149,7 +142,6 @@ python3 -m http.server 8080
 ---
 
 ## Smart Contract — Key Functions
-
 All public functions have **NatSpec documentation** (`@notice`, `@param`, `@return`).
 
 | Function           | Description                                                 |
@@ -164,7 +156,6 @@ All public functions have **NatSpec documentation** (`@notice`, `@param`, `@retu
 ---
 
 ## Security Features
-
 - **ReentrancyGuard** (OpenZeppelin) on `withdrawFunds()` and `refund()`
 - **Checks-Effects-Interactions** pattern in all state-changing functions
 - **Custom errors** for gas-efficient reverts
@@ -175,7 +166,6 @@ All public functions have **NatSpec documentation** (`@notice`, `@param`, `@retu
 ---
 
 ## Testing
-
 The test suite covers:
 
 - ✅ Campaign creation (happy + failure paths)
@@ -195,8 +185,7 @@ Target: **≥ 70% line coverage**
 ---
 
 ## Gas Optimisation
-
-See [gas-report.md](gas-report.md) for detailed before/after analysis.
+See [gas-report.md](reports/gas-report.md) for detailed before/after analysis.
 
 Key optimisations applied:
 1. **Custom errors** instead of `require()` with string messages (~200 gas saved per revert)
@@ -206,6 +195,15 @@ Key optimisations applied:
 
 ---
 
-## License
+## Known Issues / Limitations
 
+- No on-chain campaign search or filtering — requires off-chain indexing (e.g., The Graph).
+- No partial/milestone-based withdrawals — creator withdraws full amount in one transaction.
+- Campaign metadata relies on IPFS availability; local server fallback provided for development.
+- No contribution cap — contributions exceeding the goal are included in the creator's withdrawal (by design, not a vulnerability).
+- Single EVM chain deployment only.
+
+---
+
+## License
 MIT

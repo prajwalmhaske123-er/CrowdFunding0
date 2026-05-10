@@ -1,0 +1,118 @@
+\section{Deployment}
+\label{sec:deployment}
+
+The CrowdFund DApp supports two deployment modes: a local development environment using Foundry's Anvil and a production deployment on Vercel.
+
+\subsection{Local Deployment (Anvil)}
+
+\subsubsection{Step 1: Start Local Blockchain}
+
+Anvil provides a local Ethereum node with 10 pre-funded accounts, instant block mining, and deterministic private keys:
+
+\begin{lstlisting}[language={}, caption={Starting Anvil}]
+anvil
+\end{lstlisting}
+
+Anvil starts on \texttt{http://127.0.0.1:8545} with Chain ID \texttt{31337}.
+
+\subsubsection{Step 2: Deploy Contract}
+
+The deployment script (\texttt{script/deploy.s.sol}) uses Foundry's \texttt{Script} base contract:
+
+\begin{lstlisting}[language=Solidity, caption={Deployment Script}]
+contract DeployCrowdFunding is Script {
+    function run() external returns (CrowdFunding crowdFunding) {
+        vm.startBroadcast();
+        crowdFunding = new CrowdFunding();
+        vm.stopBroadcast();
+    }
+}
+\end{lstlisting}
+
+Execution:
+\begin{lstlisting}[language={}, caption={Deploy Command}]
+forge script script/deploy.s.sol:DeployCrowdFunding \
+    --rpc-url http://127.0.0.1:8545 \
+    --private-key <ANVIL_PRIVATE_KEY> \
+    --broadcast
+\end{lstlisting}
+
+An automated shell script (\texttt{deploy.sh}) loads environment variables from \texttt{.env} and executes the deployment, avoiding manual entry of sensitive keys.
+
+\subsubsection{Step 3: Configure MetaMask}
+
+MetaMask is configured to connect to the local Anvil node:
+
+\begin{table}[H]
+\centering
+\caption{MetaMask Network Configuration}
+\begin{tabular}{l l}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Network Name    & Anvil Local \\
+RPC URL         & \texttt{http://127.0.0.1:8545} \\
+Chain ID        & 31337 \\
+Currency Symbol & ETH \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Step 4: Start Frontend}
+
+\begin{lstlisting}[language={}, caption={Frontend Development Server}]
+cd frontend
+npm run dev
+\end{lstlisting}
+
+Vite starts a development server with hot module replacement at \texttt{http://localhost:5173}.
+
+\subsection{Production Deployment (Vercel)}
+
+For production, the frontend and serverless API functions are deployed to Vercel:
+
+\subsubsection{Architecture}
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Static frontend:} Vite builds the React application into the \texttt{dist/} directory, which is served as static files.
+    \item \textbf{Serverless API:} The \texttt{api/} directory contains serverless functions (\texttt{upload.js}, \texttt{ipfs/[id].js}) that replace the Express server in production.
+    \item \textbf{Vercel Blob Storage:} In production, campaign metadata is stored in Vercel Blob Storage instead of the local filesystem, ensuring persistence across serverless function invocations.
+\end{itemize}
+
+\subsubsection{Routing Configuration}
+
+\begin{lstlisting}[language={}, caption={vercel.json}]
+{
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "routes": [
+    { "src": "/api/upload", "dest": "/api/upload.js" },
+    { "src": "/api/ipfs/(.+)", "dest": "/api/ipfs/[id].js?id=$1" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
+}
+\end{lstlisting}
+
+\subsubsection{Environment Variable Security}
+
+All sensitive credentials are managed via Vercel's environment variable system, never committed to version control:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \texttt{PINATA\_API\_KEY} and \texttt{PINATA\_API\_SECRET}: IPFS pinning service credentials.
+    \item \texttt{BLOB\_READ\_WRITE\_TOKEN}: Vercel Blob Storage access token.
+    \item Private keys are \emph{never} stored in the production environment; all transactions are signed client-side via MetaMask.
+\end{itemize}
+
+\subsection{Build and Test Automation}
+
+A \texttt{build\_and\_test.sh} script automates the full CI pipeline:
+
+\begin{lstlisting}[language={}, caption={CI Script}]
+#!/bin/bash
+set -e
+forge build          # Compile contracts
+forge test -vvv      # Run tests with verbose output
+forge test --gas-report  # Generate gas report
+\end{lstlisting}

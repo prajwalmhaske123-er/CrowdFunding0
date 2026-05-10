@@ -1,0 +1,135 @@
+\section{Security Analysis}
+\label{sec:security}
+
+Security is paramount in smart contract development since deployed contracts are immutable and handle real monetary value. This section analyses the attack vectors considered, the mitigations implemented, and the design decisions that render certain attacks non-applicable.
+
+\subsection{Attacks Mitigated}
+
+\subsubsection{Reentrancy Attacks}
+
+\textbf{Attack description:} A reentrancy attack occurs when a malicious contract re-enters a vulnerable function during an external call (e.g., \texttt{.call\{value: ...\}("")}). If the victim contract updates its state \emph{after} the external call, the attacker can repeatedly drain funds before the state change takes effect.
+
+\textbf{Mitigations applied (defence in depth):}
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{OpenZeppelin \texttt{ReentrancyGuard}:} Both \texttt{withdrawFunds()} and \texttt{refund()} are protected by the \texttt{nonReentrant} modifier. This modifier uses a storage-based mutex that prevents any reentrant call from executing the function body.
+    
+    \item \textbf{Checks-Effects-Interactions (CEI) pattern:} Even without \texttt{nonReentrant}, the contract is safe because:
+    \begin{itemize}
+        \item In \texttt{withdrawFunds()}: \texttt{campaign.status} is set to \texttt{FundsWithdrawn} \emph{before} the ETH transfer. A reentrant call would see the wrong status and revert.
+        \item In \texttt{refund()}: \texttt{contributions[...][msg.sender]} is zeroed \emph{before} the ETH transfer. A reentrant call would see zero contribution and revert with \texttt{NoContributionToRefund}.
+    \end{itemize}
+    
+    \item \textbf{Test coverage:} Tests \texttt{test\_RevertWhen\_WithdrawTwice} and \texttt{test\_RevertWhen\_RefundTwice} verify that repeated calls revert even without reentrancy, ensuring the state updates are correctly ordered.
+\end{enumerate}
+
+\subsubsection{Unauthorised Withdrawal (Access Control)}
+
+\textbf{Attack description:} An attacker attempts to call \texttt{withdrawFunds()} on a campaign they did not create, stealing the funds.
+
+\textbf{Mitigation:} The \texttt{withdrawFunds()} function includes an explicit check:
+\begin{lstlisting}[language=Solidity]
+if (msg.sender != campaign.creator) revert OnlyCreatorCanCall();
+\end{lstlisting}
+
+\textbf{Test coverage:} \texttt{test\_RevertWhen\_NonCreatorWithdraws} verifies that a \texttt{stranger} address is rejected.
+
+\subsubsection{Double-Withdraw / Double-Refund}
+
+\textbf{Attack description:} A creator calls \texttt{withdrawFunds()} multiple times, or a contributor calls \texttt{refund()} multiple times, to extract more ETH than entitled.
+
+\textbf{Mitigation:}
+\begin{itemize}[leftmargin=1.5em]
+    \item \texttt{withdrawFunds()} transitions the status to \texttt{FundsWithdrawn}. A second call checks \texttt{campaign.status != Status.Successful} and reverts.
+    \item \texttt{refund()} zeroes the contribution mapping. A second call checks \texttt{contributedAmount == 0} and reverts with \texttt{NoContributionToRefund}.
+\end{itemize}
+
+\textbf{Test coverage:} \texttt{test\_RevertWhen\_WithdrawTwice} and \texttt{test\_RevertWhen\_RefundTwice}.
+
+\subsubsection{Front-Running and Timing Attacks}
+
+\textbf{Attack description:} A miner or MEV bot reorders transactions to manipulate campaign outcomes (e.g., contributing just before the deadline to swing the result).
+
+\textbf{Mitigation:} The contract uses \texttt{block.timestamp} for deadline enforcement, which has a tolerance of approximately 15 seconds on Ethereum mainnet. While not perfectly precise, the 7-day campaign duration makes timestamp manipulation inconsequential. Additionally, there is no economic incentive to front-run contributions since the contract does not offer any priority-based advantages.
+
+\subsubsection{Path Traversal on Backend API}
+
+\textbf{Attack description:} An attacker sends a crafted campaign ID such as \texttt{../../etc/passwd} to the \texttt{/api/upload} or \texttt{/api/ipfs/:id} endpoints, attempting to read or write arbitrary files on the server.
+
+\textbf{Mitigation:} The backend applies input sanitisation via a \texttt{sanitiseId()} function:
+\begin{lstlisting}[language=JavaScript]
+function sanitiseId(rawId) {
+    return rawId.replace(/[^a-zA-Z0-9_\-\.x]/g, '');
+}
+\end{lstlisting}
+
+This strips all characters except alphanumerics, hyphens, underscores, dots, and the letter `x' (for hex prefixes), preventing any path traversal sequences from reaching the filesystem.
+
+\subsection{Contribution Overlimit: By Design, Not a Vulnerability}
+\label{subsec:overlimit}
+
+\textbf{Scenario:} A campaign has a goal of 10 ETH. Contributors collectively contribute 15 ETH (5 ETH over the goal).
+
+\textbf{Behaviour:} The contract \emph{intentionally does not cap contributions at the goal amount}. The extra 5 ETH is added to \texttt{raisedWei} and is included in the creator's withdrawal.
+
+\textbf{Why this is not a vulnerability:}
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{No loss of user funds:} The excess contribution is not locked or burned. It is transferred to the campaign creator upon withdrawal, exactly as intended. The contributor knowingly sent ETH to support the campaign.
+    
+    \item \textbf{No refund race condition:} Since the campaign is marked \texttt{Successful} (not \texttt{Failed}), the refund path is entirely blocked. There is no race between contributors trying to refund and the creator trying to withdraw. The test \texttt{test\_RevertWhen\_RefundSuccessfulCampaign} explicitly verifies this: a contributor who funded a successful campaign \emph{cannot} call \texttt{refund()}.
+    
+    \item \textbf{Industry-standard behaviour:} Traditional crowdfunding platforms (Kickstarter, Indiegogo) also allow campaigns to exceed their goal. Overfunding is considered a positive outcome, not an error.
+    
+    \item \textbf{Gas efficiency:} Implementing a contribution cap would require an additional \texttt{SLOAD} (to read the goal) and comparison on every contribution, adding gas cost for a check that provides no security benefit.
+    
+    \item \textbf{Test coverage:} \texttt{test\_SuccessfulCampaignWithdraw} explicitly tests this scenario: backers contribute 11 ETH against a 10 ETH goal, and the creator successfully withdraws the full 11 ETH.
+\end{enumerate}
+
+\subsection{Attacks Considered but Not Applicable}
+
+\begin{table}[H]
+\centering
+\caption{Non-Applicable Attack Vectors}
+\label{tab:nonapplicable}
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Attack Vector} & \textbf{Reason Not Applicable} \\
+\midrule
+Integer overflow/underflow & Solidity $\geq$ 0.8.x has built-in overflow checks. The only \texttt{unchecked} block is the campaign counter, which cannot overflow a \texttt{uint256}. \\
+\addlinespace
+Denial of Service (DoS) via block gas limit & The contract does not iterate over unbounded arrays. All operations are O(1) in gas. Refunds are pull-based (each user claims individually), not push-based (contract sends to all). \\
+\addlinespace
+Selfdestruct / force-send ETH & The contract does not rely on \texttt{address(this).balance} for any logic. It tracks \texttt{raisedWei} independently. Force-sent ETH via \texttt{selfdestruct} would simply sit in the contract without affecting any campaign logic. \\
+\addlinespace
+Tx.origin phishing & The contract never uses \texttt{tx.origin}. All authentication checks use \texttt{msg.sender}. \\
+\addlinespace
+Oracle manipulation & The contract does not use any external price oracles. All values are denominated in Wei. \\
+\addlinespace
+Flash loan attacks & There is no economic incentive for flash loans since the contract does not involve token swaps, liquidity pools, or price-dependent logic. \\
+\addlinespace
+Private key exposure in Git & The \texttt{.env} file containing private keys and API secrets is excluded from version control via \texttt{.gitignore}. An \texttt{.env.example} template is provided with placeholder values. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Security Summary}
+
+\begin{table}[H]
+\centering
+\caption{Security Measures Summary}
+\label{tab:securitysummary}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Threat} & \textbf{Severity} & \textbf{Mitigation} \\
+\midrule
+Reentrancy         & Critical & \texttt{nonReentrant} + CEI pattern (double protection) \\
+Unauthorised access & Critical & \texttt{msg.sender == creator} check \\
+Double withdraw    & High     & Status transition to \texttt{FundsWithdrawn} \\
+Double refund      & High     & Contribution zeroed before transfer \\
+Post-deadline contrib. & Medium & \texttt{block.timestamp $\geq$ deadline} check \\
+Path traversal     & Medium   & \texttt{sanitiseId()} input validation \\
+Overlimit contrib. & Info     & By design; no security impact \\
+\bottomrule
+\end{tabularx}
+\end{table}

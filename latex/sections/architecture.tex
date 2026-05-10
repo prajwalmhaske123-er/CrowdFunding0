@@ -1,0 +1,113 @@
+\section{System Architecture}
+\label{sec:architecture}
+
+The CrowdFund platform follows a hybrid architecture that strategically partitions data between on-chain and off-chain storage to optimise for gas efficiency, data integrity, and user experience.
+
+\subsection{Architectural Overview}
+
+The system comprises three primary layers:
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Smart Contract Layer (On-Chain):} The \texttt{CrowdFunding.sol} contract deployed on Ethereum manages all financial logic---campaign lifecycle, contributions, withdrawals, and refunds. All monetary state is stored immutably on-chain.
+    \item \textbf{Metadata Layer (Off-Chain):} Campaign descriptive data (titles, descriptions, images) is stored off-chain via IPFS (Pinata) or a local server fallback. The on-chain contract stores only a \texttt{bytes32} IPFS CID as a pointer to this data.
+    \item \textbf{Frontend Layer:} A React-based single-page application communicates with the smart contract via ethers.js and MetaMask, providing users with an intuitive interface for all platform interactions.
+\end{enumerate}
+
+\subsection{On-Chain Data Model}
+
+All data critical to the financial integrity of the platform is stored directly in the smart contract:
+
+\begin{table}[H]
+\centering
+\caption{On-Chain Data Fields}
+\label{tab:onchain}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Purpose} \\
+\midrule
+Campaign ID        & \texttt{uint256}    & Auto-incrementing unique identifier \\
+Creator address    & \texttt{address}    & Wallet address of the campaign creator \\
+Goal               & \texttt{uint256}    & Funding target in Wei \\
+Deadline           & \texttt{uint256}    & Unix timestamp after which no contributions are accepted \\
+Amount raised      & \texttt{uint256}    & Cumulative contributions received in Wei \\
+Status             & \texttt{enum}       & Lifecycle state: Active, Successful, Failed, FundsWithdrawn \\
+Contributions      & \texttt{mapping}    & Per-contributor amounts: \texttt{campaignId $\Rightarrow$ address $\Rightarrow$ uint256} \\
+IPFS CID           & \texttt{bytes32}    & Hash pointer to off-chain metadata \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Off-Chain Data Strategy}
+
+Storing large textual or media content on-chain is prohibitively expensive. A single \texttt{SSTORE} operation for a 32-byte value costs approximately 20,000 gas, while storing a 256-character string would cost upwards of 160,000 gas. The platform therefore stores the following data off-chain:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item Campaign title and full description
+    \item Pitch images and videos
+    \item Backer reward tiers and fulfilment details
+    \item Creator identity and verification documents
+    \item Campaign updates and backer communications
+\end{itemize}
+
+The off-chain storage pipeline operates as follows:
+\begin{enumerate}[leftmargin=1.5em]
+    \item The frontend serialises campaign metadata as JSON.
+    \item The metadata is uploaded to Pinata (IPFS pinning service) via the backend API.
+    \item Pinata returns an IPFS CID (content hash).
+    \item The CID is converted to \texttt{bytes32} and stored on-chain alongside the campaign.
+    \item When retrieving campaign details, the frontend reads the \texttt{bytes32} CID from the contract and fetches the full metadata from IPFS gateways or the local server fallback.
+\end{enumerate}
+
+If Pinata is unavailable (e.g., due to network restrictions), the backend falls back to local filesystem storage, saving JSON files in a \texttt{metadata/} directory and returning the sanitised filename as the CID.
+
+\subsection{Technology Stack}
+
+\begin{table}[H]
+\centering
+\caption{Technology Stack}
+\label{tab:techstack}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Layer} & \textbf{Technology} & \textbf{Role} \\
+\midrule
+Smart Contract  & Solidity \textasciicircum 0.8.24      & Core business logic \\
+Framework       & Foundry (Forge, Cast, Anvil)           & Compilation, testing, deployment \\
+Security        & OpenZeppelin ReentrancyGuard            & Reentrancy attack prevention \\
+Frontend        & React + Vite                            & Single-page application \\
+Web3 Bridge     & ethers.js v6                            & Ethereum RPC \& wallet interaction \\
+Wallet          & MetaMask                                & User authentication \& transaction signing \\
+Off-Chain Store & Pinata (IPFS) / Local Server            & Campaign metadata persistence \\
+Backend         & Express.js (Node.js)                    & API proxy for IPFS uploads \\
+Deployment      & Vercel                                  & Production hosting (frontend + serverless API) \\
+Local Node      & Anvil                                   & Local Ethereum development chain \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Project Directory Structure}
+
+\begin{lstlisting}[language={}, caption={Project Structure}, label={lst:structure}]
+Crowd-Funding/
+|-- src/
+|   +-- CrowdFunding.sol          # Main smart contract
+|-- test/
+|   +-- CrowdFunding.t.sol        # Comprehensive test suite
+|-- script/
+|   +-- deploy.s.sol              # Foundry deployment script
+|-- frontend/
+|   |-- src/
+|   |   |-- components/           # React UI components
+|   |   |-- config/contract.js    # ABI + deployed address
+|   |   |-- context/Web3Context.jsx
+|   |   |-- hooks/useContract.js  # Contract interaction hook
+|   |   +-- App.jsx               # Main application
+|   |-- api/                      # Vercel serverless functions
+|   |-- server.js                 # Express backend (local dev)
+|   +-- vercel.json               # Vercel deployment config
+|-- lib/
+|   |-- forge-std/                # Foundry standard library
+|   +-- openzeppelin-contracts/   # OpenZeppelin contracts
+|-- foundry.toml                  # Foundry configuration
+|-- gas-report.md                 # Gas optimisation report
++-- README.md
+\end{lstlisting}
